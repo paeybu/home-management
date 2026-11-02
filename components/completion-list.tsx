@@ -1,14 +1,16 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { deleteCompletion } from "@/app/(app)/tasks/actions";
+import { EditCompletionSheet } from "@/components/edit-completion-sheet";
 import { formatDate, formatMoney } from "@/lib/format";
 import type { TaskCompletion } from "@/lib/types";
 
-export function CompletionList({ taskId, completions, photoUrls }: { taskId: string; completions: TaskCompletion[]; photoUrls: Record<string, string> }) {
+export function CompletionList({ taskId, completions, photoUrls }: { taskId: string; completions: (TaskCompletion & { contacts?: { id: string; name: string } | null })[]; photoUrls: Record<string, string> }) {
   const [pending, start] = useTransition();
   if (completions.length === 0) return <p className="py-3 text-sm text-muted-foreground">Not completed yet.</p>;
   return (
@@ -26,8 +28,15 @@ export function CompletionList({ taskId, completions, photoUrls }: { taskId: str
               <span className="font-medium">{formatDate(c.completed_at)}</span>
               <span className="tabular-nums text-muted-foreground">{c.cost !== null ? formatMoney(c.cost) : ""}</span>
             </div>
+            {c.contacts && (
+              <p className="text-xs text-muted-foreground">
+                by <Link href={`/contacts/${c.contacts.id}`} className="underline-offset-4 hover:underline">{c.contacts.name}</Link>
+              </p>
+            )}
             {c.notes && <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{c.notes}</p>}
           </div>
+          <div className="flex shrink-0 items-start">
+          <EditCompletionSheet completion={c} contactName={c.contacts?.name} />
           <Button
             variant="ghost"
             size="icon-sm"
@@ -40,6 +49,7 @@ export function CompletionList({ taskId, completions, photoUrls }: { taskId: str
           >
             <Trash2 aria-hidden />
           </Button>
+          </div>
         </li>
       ))}
     </ul>

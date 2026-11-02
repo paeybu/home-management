@@ -11,6 +11,18 @@ const str = (fd: FormData, k: string) => {
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 };
 
+export async function updatePropertyName(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const { supabase, householdId, role } = await requireSession();
+  if (role !== "owner") return { error: "Only the owner can rename the property." };
+  const name = str(fd, "name");
+  if (!name) return { error: "Name is required." };
+  if (name.length > 80) return { error: "Name must be 80 characters or fewer." };
+  const { error } = await supabase.from("households").update({ name }).eq("id", householdId);
+  if (error) return { error: error.message };
+  revalidatePath("/", "layout");
+  return { success: "Property name saved." };
+}
+
 export async function createCategory(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const { supabase, householdId } = await requireSession();
   const name = str(fd, "name");

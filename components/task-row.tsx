@@ -5,8 +5,9 @@ import { formatDate, relativeDue } from "@/lib/format";
 import type { TaskDue } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Row = Pick<TaskDue, "id" | "title" | "due_on" | "status" | "days_until_due" | "estimated_cost" | "paused_at" | "archived_at"> & {
+type Row = Pick<TaskDue, "id" | "title" | "due_on" | "status" | "days_until_due" | "estimated_cost" | "paused_at" | "archived_at"> & { contact_id?: string | null } & {
   categories?: { name: string; icon: string | null } | null;
+  contacts?: { name: string } | null;
 };
 
 export function TaskRow({ task, showStatus = false }: { task: Row; showStatus?: boolean }) {
@@ -40,11 +41,17 @@ export function TaskRow({ task, showStatus = false }: { task: Row; showStatus?: 
               <span>{task.categories.name}</span>
             </>
           )}
+          {task.contacts?.name && (
+            <>
+              <span aria-hidden>·</span>
+              <span>→ {task.contacts.name}</span>
+            </>
+          )}
         </div>
       </Link>
       {showStatus && !inactive && <StatusBadge status={task.status} />}
       {!inactive && task.status !== "done" && (
-        <MarkDoneSheet taskId={task.id} title={task.title} estimatedCost={task.estimated_cost} variant={task.status === "overdue" ? "default" : "outline"} />
+        <MarkDoneSheet taskId={task.id} title={task.title} estimatedCost={task.estimated_cost} contactId={task.contact_id} variant={task.status === "overdue" ? "default" : "outline"} />
       )}
     </li>
   );

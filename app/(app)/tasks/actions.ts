@@ -54,6 +54,7 @@ function parseTask(fd: FormData) {
       notes: str(fd, "notes"),
       category_id: str(fd, "category_id"),
       asset_id: str(fd, "asset_id"),
+      contact_id: str(fd, "contact_id"),
       schedule_type,
       interval_value: Math.trunc(interval_value ?? 0) || null,
       interval_unit,
@@ -77,6 +78,7 @@ export async function createTask(_prev: ActionState, fd: FormData): Promise<Acti
   if (error) return { error: error.message };
   revalidatePath("/");
   revalidatePath("/tasks");
+  revalidatePath("/contacts", "layout");
   redirect(`/tasks/${data.id}`);
 }
 
@@ -89,7 +91,23 @@ export async function updateTask(id: string, _prev: ActionState, fd: FormData): 
   revalidatePath("/");
   revalidatePath("/tasks");
   revalidatePath(`/tasks/${id}`);
+  revalidatePath("/contacts", "layout");
   redirect(`/tasks/${id}`);
+}
+
+type Supabase = Awaited<ReturnType<typeof requireSession>>["supabase"];
+
+/** Uploads the optional `photo` field. Returns { path: null } when no file was chosen. */
+async function uploadPhoto(supabase: Supabase, fd: FormData, householdId: string, taskId: string): Promise<{ path: string | null } | { error: string }> {
+  const photo = fd.get("photo");
+  if (!(photo instanceof File) || photo.size === 0) return { path: null };
+  if (!photo.type.startsWith("image/")) return { error: "Photo must be an image." };
+  if (photo.size > 10 * 1024 * 1024) return { error: "Photo must be under 10 MB." };
+  const ext = (photo.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${householdId}/${taskId}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("completions").upload(path, photo, { contentType: photo.type, upsert: false });
+  if (error) return { error: `Photo upload failed: ${error.message}` };
+  return { path };
 }
 
 export async function markDone(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -106,23 +124,15 @@ export async function markDone(_prev: ActionState, fd: FormData): Promise<Action
     ? new Date(`${completed_on}T${new Date().toISOString().slice(11)}`).toISOString()
     : new Date().toISOString();
 
-  let photo_path: string | null = null;
-  const photo = fd.get("photo");
-  if (photo instanceof File && photo.size > 0) {
-    if (!photo.type.startsWith("image/")) return { error: "Photo must be an image." };
-    if (photo.size > 10 * 1024 * 1024) return { error: "Photo must be under 10 MB." };
-    const ext = (photo.name.split(".").pop() || "jpg").toLowerCase();
-    photo_path = `${householdId}/${task_id}/${crypto.randomUUID()}.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from("completions")
-      .upload(photo_path, photo, { contentType: photo.type, upsert: false });
-    if (upErr) return { error: `Photo upload failed: ${upErr.message}` };
-  }
+  const upload = await uploadPhoto(supabase, fd, householdId, task_id);
+  if ("error" in upload) return { error: upload.error };
+  const photo_path = upload.path;
 
   const { error } = await supabase.from("task_completions").insert({
     task_id,
     household_id: householdId,
     completed_by: userId,
+    contact_id: str(fd, "contact_id"),
     completed_at,
     cost,
     notes: str(fd, "notes"),
@@ -134,7 +144,48 @@ export async function markDone(_prev: ActionState, fd: FormData): Promise<Action
   revalidatePath("/tasks");
   revalidatePath(`/tasks/${task_id}`);
   revalidatePath("/payments");
+  revalidatePath("/contacts", "layout");
   return { success: "Marked done." };
+}
+
+export async function updateCompletion(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const { supabase, householdId } = await requireSession();
+  const { data: existing } = await supabase.from("task_completions").select("task_id, completed_at, photo_path").eq("id", id).maybeSingle();
+  if (!existing) return { error: "Completion not found." };
+
+  const cost = num(fd, "cost");
+  if (Number.isNaN(cost) || (cost !== null && cost < 0)) return { error: "Cost must be a positive number." };
+
+  // Same date -> keep the exact timestamp; new date -> keep the original time of day on the new date.
+  const completed_on = str(fd, "completed_on");
+  const prevIso = new Date(existing.completed_at).toISOString();
+  if (!completed_on) return { error: "Date is required." };
+  const completed_at = completed_on === prevIso.slice(0, 10) ? existing.completed_at : new Date(`${completed_on}T${prevIso.slice(11)}`).toISOString();
+
+  const upload = await uploadPhoto(supabase, fd, householdId, existing.task_id);
+  if ("error" in upload) return { error: upload.error };
+  const removePhoto = fd.get("remove_photo") === "on";
+  const photo_path = upload.path ?? (removePhoto ? null : existing.photo_path);
+
+  const { error } = await supabase.from("task_completions").update({
+    completed_at,
+    contact_id: str(fd, "contact_id"),
+    cost,
+    notes: str(fd, "notes"),
+    photo_path,
+  }).eq("id", id);
+  if (error) {
+    if (upload.path) await supabase.storage.from("completions").remove([upload.path]);
+    return { error: error.message };
+  }
+  if (existing.photo_path && existing.photo_path !== photo_path) await supabase.storage.from("completions").remove([existing.photo_path]);
+
+  revalidatePath("/");
+  revalidatePath("/tasks");
+  revalidatePath(`/tasks/${existing.task_id}`);
+  revalidatePath("/payments");
+  revalidatePath("/contacts", "layout");
+  return { success: "Completion updated." };
 }
 
 export async function deleteCompletion(id: string, taskId: string) {

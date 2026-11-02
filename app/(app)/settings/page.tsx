@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { CategoryManager } from "@/components/category-manager";
 import { LineTestButton } from "@/components/line-test-button";
+import { PropertyNameForm } from "@/components/property-name-form";
 import { requireSession } from "@/lib/auth";
 import { lineConfigured } from "@/lib/line";
 import { formatDate } from "@/lib/format";
@@ -22,6 +23,18 @@ export default async function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Settings" description={household?.name} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Property</CardTitle>
+          <CardDescription>
+            {role === "owner" ? "Shown at the top of the home page." : "Only the owner can rename the property."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PropertyNameForm name={household?.name ?? ""} canEdit={role === "owner"} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

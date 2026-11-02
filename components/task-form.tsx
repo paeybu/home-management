@@ -8,6 +8,8 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { SubmitButton } from "@/components/submit-button";
 import type { ActionState, Asset, Category, IntervalUnit, ScheduleType, Task } from "@/lib/types";
 import { CURRENCY } from "@/lib/format";
+import { contactLabel } from "@/lib/contacts";
+import { useContacts } from "@/components/contacts-provider";
 
 type Props = {
   action: (prev: ActionState, fd: FormData) => Promise<ActionState>;
@@ -15,12 +17,14 @@ type Props = {
   assets: Pick<Asset, "id" | "name">[];
   task?: Task;
   defaultAssetId?: string;
+  defaultContactId?: string;
   submitLabel?: string;
 };
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-export function TaskForm({ action, categories, assets, task, defaultAssetId, submitLabel = "Save task" }: Props) {
+export function TaskForm({ action, categories, assets, task, defaultAssetId, defaultContactId, submitLabel = "Save task" }: Props) {
+  const contacts = useContacts();
   const [state, formAction] = useActionState<ActionState, FormData>(action, undefined);
   const [scheduleType, setScheduleType] = useState<ScheduleType>(task?.schedule_type ?? "rolling");
   const [unit, setUnit] = useState<IntervalUnit>(task?.interval_unit ?? "month");
@@ -59,6 +63,16 @@ export function TaskForm({ action, categories, assets, task, defaultAssetId, sub
             ))}
           </NativeSelect>
         </div>
+      </div>
+
+      <div className="grid gap-1.5">
+        <Label htmlFor="contact_id">Assigned to <span className="text-muted-foreground">optional</span></Label>
+        <NativeSelect id="contact_id" name="contact_id" defaultValue={task?.contact_id ?? defaultContactId ?? ""}>
+          <NativeSelectOption value="">Me / nobody</NativeSelectOption>
+          {contacts.map((c) => (
+            <NativeSelectOption key={c.id} value={c.id}>{contactLabel(c)}</NativeSelectOption>
+          ))}
+        </NativeSelect>
       </div>
 
       <fieldset className="grid gap-3 rounded-xl border p-3">
@@ -125,7 +139,7 @@ export function TaskForm({ action, categories, assets, task, defaultAssetId, sub
 
       <div className="grid gap-1.5">
         <Label htmlFor="notes">Notes <span className="text-muted-foreground">optional</span></Label>
-        <Textarea id="notes" name="notes" rows={3} defaultValue={task?.notes ?? ""} placeholder="Filter size, technician contact, where the valve is…" />
+        <Textarea id="notes" name="notes" rows={3} defaultValue={task?.notes ?? ""} placeholder="Filter size, where the valve is…" />
       </div>
 
       <SubmitButton size="lg">{submitLabel}</SubmitButton>

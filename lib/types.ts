@@ -26,12 +26,29 @@ export type Asset = {
   updated_at: string;
 };
 
+export type Contact = {
+  id: string;
+  household_id: string;
+  name: string;
+  company: string | null;
+  role: string | null;
+  category_id: string | null;
+  phone: string | null;
+  email: string | null;
+  line_id: string | null;
+  notes: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Task = {
   id: string;
   household_id: string;
   title: string;
   category_id: string | null;
   asset_id: string | null;
+  contact_id: string | null;
   notes: string | null;
   schedule_type: ScheduleType;
   interval_value: number | null;
@@ -60,6 +77,7 @@ export type TaskCompletion = {
   household_id: string;
   completed_at: string;
   completed_by: string | null;
+  contact_id: string | null;
   cost: number | null;
   notes: string | null;
   photo_path: string | null;

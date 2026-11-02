@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { MarkDoneSheet } from "@/components/mark-done-sheet";
 import { TaskLifecycleActions } from "@/components/task-lifecycle-actions";
 import { CompletionList } from "@/components/completion-list";
+import { ContactChannels } from "@/components/contact-actions";
 import { requireSession } from "@/lib/auth";
 import { describeSchedule, formatDate, formatMoney, relativeDue } from "@/lib/format";
 import type { Task, TaskCompletion, TaskDue } from "@/lib/types";
@@ -15,6 +16,7 @@ import type { Task, TaskCompletion, TaskDue } from "@/lib/types";
 type Detail = Task & {
   categories: { name: string; icon: string | null } | null;
   assets: { id: string; name: string } | null;
+  contacts: { id: string; name: string; role: string | null; phone: string | null; email: string | null; line_id: string | null } | null;
 };
 
 export default async function TaskDetailPage({ params }: PageProps<"/tasks/[id]">) {
@@ -22,9 +24,9 @@ export default async function TaskDetailPage({ params }: PageProps<"/tasks/[id]"
   const { supabase } = await requireSession();
 
   const [{ data: task }, { data: due }, { data: completions }] = await Promise.all([
-    supabase.from("tasks").select("*, categories(name, icon), assets(id, name)").eq("id", id).maybeSingle<Detail>(),
+    supabase.from("tasks").select("*, categories(name, icon), assets(id, name), contacts(id, name, role, phone, email, line_id)").eq("id", id).maybeSingle<Detail>(),
     supabase.from("task_due").select("due_on, status, days_until_due, last_completed_at, completion_count").eq("id", id).maybeSingle<Pick<TaskDue, "due_on" | "status" | "days_until_due" | "last_completed_at" | "completion_count">>(),
-    supabase.from("task_completions").select("*").eq("task_id", id).order("completed_at", { ascending: false }).returns<TaskCompletion[]>(),
+    supabase.from("task_completions").select("*, contacts(id, name)").eq("task_id", id).order("completed_at", { ascending: false }).returns<(TaskCompletion & { contacts: { id: string; name: string } | null })[]>(),
   ]);
   if (!task) notFound();
 
@@ -75,10 +77,19 @@ export default async function TaskDetailPage({ params }: PageProps<"/tasks/[id]"
               Asset: <Link href={`/assets/${task.assets.id}`} className="font-medium underline-offset-4 hover:underline">{task.assets.name}</Link>
             </p>
           )}
+          {task.contacts && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              <span>
+                Assigned to <Link href={`/contacts/${task.contacts.id}`} className="font-medium underline-offset-4 hover:underline">{task.contacts.name}</Link>
+                {task.contacts.role && <span className="text-muted-foreground"> · {task.contacts.role}</span>}
+              </span>
+              <span className="flex"><ContactChannels contact={task.contacts} compact /></span>
+            </div>
+          )}
           {task.notes && <p className="text-sm whitespace-pre-wrap text-muted-foreground">{task.notes}</p>}
           <div className="flex flex-wrap items-center gap-2">
             {!task.archived_at && !task.paused_at && state !== "done" && (
-              <MarkDoneSheet taskId={task.id} title={task.title} estimatedCost={task.estimated_cost} size="default" />
+              <MarkDoneSheet taskId={task.id} title={task.title} estimatedCost={task.estimated_cost} contactId={task.contact_id} size="default" />
             )}
             <TaskLifecycleActions id={task.id} paused={!!task.paused_at} archived={!!task.archived_at} />
           </div>

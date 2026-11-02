@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 
     const { data: rows, error } = await admin
       .from("task_due")
-      .select("title, due_on, days_until_due, categories(name, icon)")
+      .select("title, due_on, days_until_due, categories(name, icon), contacts(name)")
       .eq("household_id", h.id)
       .not("due_on", "is", null)
       .lte("days_until_due", 3)
@@ -43,7 +43,8 @@ export async function GET(request: Request) {
 
     const tasks: DigestTask[] = (rows ?? []).map((r) => {
       const cat = r.categories as unknown as { name: string; icon: string | null } | null;
-      return { title: r.title, due_on: r.due_on!, days_until_due: r.days_until_due!, category: cat?.name ?? null, icon: cat?.icon ?? null };
+      const contact = r.contacts as unknown as { name: string } | null;
+      return { title: r.title, due_on: r.due_on!, days_until_due: r.days_until_due!, category: cat?.name ?? null, icon: cat?.icon ?? null, assignee: contact?.name ?? null };
     });
     const text = buildDigest(tasks, appUrl);
     if (!text) { results[h.id] = "nothing_due"; continue; }

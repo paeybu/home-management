@@ -7,6 +7,7 @@ export type DigestTask = {
   days_until_due: number;
   category: string | null;
   icon: string | null;
+  assignee?: string | null;
 };
 
 /** Plain-text digest of overdue + due within `soonDays` tasks. Returns null when there is nothing to say. */
@@ -17,7 +18,7 @@ export function buildDigest(tasks: DigestTask[], appUrl: string, soonDays = 3) {
 
   const line = (t: DigestTask) => {
     const when = t.days_until_due === 0 ? "today" : t.days_until_due === 1 ? "tomorrow" : t.days_until_due < 0 ? `${-t.days_until_due}d overdue` : `in ${t.days_until_due}d`;
-    return `${t.icon ?? "•"} ${t.title} — ${when} (${formatDate(t.due_on, { year: undefined })})`;
+    return `${t.icon ?? "•"} ${t.title} — ${when} (${formatDate(t.due_on, { year: undefined })})${t.assignee ? ` → ${t.assignee}` : ""}`;
   };
 
   const parts: string[] = ["🏠 Home tasks"];

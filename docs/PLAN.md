@@ -35,7 +35,9 @@ tasks              id, household_id, title, category_id, asset_id?, notes,
                    fixed_month?,                                            -- fixed yearly
                    start_date, estimated_cost?,
                    paused_at, archived_at
-task_completions   id, task_id, household_id, completed_at, completed_by, cost?, notes?, photo_path?
+task_completions   id, task_id, household_id, completed_at, completed_by, contact_id?, cost?, notes?, photo_path?
+contacts           id, household_id, name, company, role, category_id, phone, email, line_id, notes, archived_at
+                   -- added 2026-11-02; tasks.contact_id = assignee, task_completions.contact_id = who did it
 
 ## Next due (SQL view `task_due`)
 - once:    start_date if no completion, else null (done)
@@ -56,12 +58,14 @@ Env: LINE_CHANNEL_ACCESS_TOKEN, LINE_GROUP_ID, CRON_SECRET
 /tasks/[id]       detail, completion history, photos
 /assets           list, create/edit
 /assets/[id]      detail, linked tasks
+/contacts         list with search (name/role/phone digits), call/LINE/email buttons
+/contacts/[id]    detail, assigned tasks, job history, total paid
 /payments         cost by category, by year
 /settings         categories, LINE test send
 
 ## Deferred
 Member invites & roles, two-way LINE commands ("done mow"), documents/receipts on assets, push notifications,
-multiple properties, service provider contacts, import/export.
+multiple properties, import/export.
 
 ## Build order
 1. Supabase (Vercel Marketplace) + Google OAuth + email allowlist + schema + RLS + household bootstrap

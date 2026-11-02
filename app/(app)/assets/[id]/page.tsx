@@ -18,8 +18,8 @@ export default async function AssetDetailPage({ params }: PageProps<"/assets/[id
   const { supabase } = await requireSession();
   const [{ data: asset }, { data: dueTasks }, { data: inactiveTasks }, { data: spend }] = await Promise.all([
     supabase.from("assets").select("*, categories(name, icon)").eq("id", id).maybeSingle<Detail>(),
-    supabase.from("task_due").select("*, categories(name, icon)").eq("asset_id", id).order("due_on", { ascending: true, nullsFirst: false }).returns<Row[]>(),
-    supabase.from("tasks").select("*, categories(name, icon)").eq("asset_id", id).or("paused_at.not.is.null,archived_at.not.is.null").order("title"),
+    supabase.from("task_due").select("*, categories(name, icon), contacts(name)").eq("asset_id", id).order("due_on", { ascending: true, nullsFirst: false }).returns<Row[]>(),
+    supabase.from("tasks").select("*, categories(name, icon), contacts(name)").eq("asset_id", id).or("paused_at.not.is.null,archived_at.not.is.null").order("title"),
     supabase.from("task_completions").select("cost, tasks!inner(asset_id)").eq("tasks.asset_id", id),
   ]);
   if (!asset) notFound();

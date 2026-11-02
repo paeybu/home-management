@@ -15,7 +15,7 @@ export default async function NewTaskPage({ searchParams }: PageProps<"/tasks/ne
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="New task" />
-      <TaskForm action={createTask} categories={categories ?? []} assets={assets ?? []} defaultAssetId={typeof sp.asset === "string" ? sp.asset : undefined} submitLabel="Create task" />
+      <TaskForm action={createTask} categories={categories ?? []} assets={assets ?? []} defaultAssetId={typeof sp.asset === "string" ? sp.asset : undefined} defaultContactId={typeof sp.contact === "string" ? sp.contact : undefined} submitLabel="Create task" />
     </div>
   );
 }

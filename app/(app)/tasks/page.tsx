@@ -15,6 +15,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
   const sp = await searchParams;
   const category = typeof sp.category === "string" ? sp.category : "";
   const status = typeof sp.status === "string" ? sp.status : "active";
+  const contact = typeof sp.contact === "string" ? sp.contact : "";
   const { supabase, householdId } = await requireSession();
 
   const { data: categories } = await supabase
@@ -27,7 +28,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
   if (status === "paused" || status === "archived") {
     const { data } = await supabase
       .from("tasks")
-      .select("*, categories(name, icon)")
+      .select("*, categories(name, icon), contacts(name)")
       .eq("household_id", householdId)
       .not(status === "paused" ? "paused_at" : "archived_at", "is", null)
       .order("title")
@@ -38,7 +39,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
   } else {
     const { data } = await supabase
       .from("task_due")
-      .select("*, categories(name, icon)")
+      .select("*, categories(name, icon), contacts(name)")
       .eq("household_id", householdId)
       .order("due_on", { ascending: true, nullsFirst: false })
       .order("title")
@@ -46,6 +47,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
     rows = (data ?? []).filter((t) => (status === "active" ? t.status !== "done" : status === "all" ? true : t.status === status));
   }
   if (category) rows = rows.filter((t) => t.category_id === category);
+  if (contact) rows = rows.filter((t) => (contact === "none" ? !t.contact_id : t.contact_id === contact));
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,7 +59,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tasks">) {
           </Button>
         }
       />
-      <TaskFilters categories={categories ?? []} category={category} status={status} />
+      <TaskFilters categories={categories ?? []} category={category} status={status} contact={contact} />
       {rows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No tasks match.</p>
       ) : (

@@ -14,17 +14,22 @@ import { SubmitButton } from "@/components/submit-button";
 import { markDone } from "@/app/(app)/tasks/actions";
 import type { ActionState } from "@/lib/types";
 import { CURRENCY } from "@/lib/format";
+import { contactLabel } from "@/lib/contacts";
+import { useContacts } from "@/components/contacts-provider";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 type Props = {
   taskId: string;
   title: string;
   estimatedCost?: number | null;
+  contactId?: string | null;
   size?: "sm" | "default";
   variant?: "default" | "outline" | "secondary";
 };
 
-export function MarkDoneSheet({ taskId, title, estimatedCost, size = "sm", variant = "default" }: Props) {
+export function MarkDoneSheet({ taskId, title, estimatedCost, contactId, size = "sm", variant = "default" }: Props) {
   const [open, setOpen] = useState(false);
+  const contacts = useContacts();
   const [, action] = useActionState<ActionState, FormData>(async (prev, fd) => {
     const result = await markDone(prev, fd);
     if (result?.success) {
@@ -53,6 +58,15 @@ export function MarkDoneSheet({ taskId, title, estimatedCost, size = "sm", varia
               <Label htmlFor="completed_on">Date</Label>
               <Input id="completed_on" name="completed_on" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
             </div>
+            {contacts.length > 0 && (
+              <div className="grid gap-1.5">
+                <Label htmlFor="contact_id">Done by</Label>
+                <NativeSelect id="contact_id" name="contact_id" defaultValue={contactId ?? ""}>
+                  <NativeSelectOption value="">Me</NativeSelectOption>
+                  {contacts.map((c) => <NativeSelectOption key={c.id} value={c.id}>{contactLabel(c)}</NativeSelectOption>)}
+                </NativeSelect>
+              </div>
+            )}
             <div className="grid gap-1.5">
               <Label htmlFor="cost">Cost ({CURRENCY}) <span className="text-muted-foreground">optional</span></Label>
               <Input id="cost" name="cost" type="number" inputMode="decimal" min={0} step="0.01" placeholder={estimatedCost ? String(estimatedCost) : "0"} />
@@ -63,7 +77,7 @@ export function MarkDoneSheet({ taskId, title, estimatedCost, size = "sm", varia
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="notes">Notes <span className="text-muted-foreground">optional</span></Label>
-              <Textarea id="notes" name="notes" rows={2} placeholder="What was done, who did it…" />
+              <Textarea id="notes" name="notes" rows={2} placeholder="What was done…" />
             </div>
           </div>
           <SheetFooter>

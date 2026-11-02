@@ -27,10 +27,11 @@ export default async function DashboardPage() {
   in30.setDate(in30.getDate() + 30);
   const monthEnd = in30.toISOString().slice(0, 10);
 
-  const [{ data: due }, { data: recent }] = await Promise.all([
+  const [{ data: household }, { data: due }, { data: recent }] = await Promise.all([
+    supabase.from("households").select("name").eq("id", householdId).single(),
     supabase
       .from("task_due")
-      .select("*, categories(name, icon)")
+      .select("*, categories(name, icon), contacts(name)")
       .eq("household_id", householdId)
       .not("due_on", "is", null)
       .lte("due_on", monthEnd)
@@ -52,7 +53,7 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Home"
+        title={household?.name || "Home"}
         description={formatDate(today, { weekday: "long" })}
         action={
           <Button render={<Link href="/tasks/new" />} size="sm">
