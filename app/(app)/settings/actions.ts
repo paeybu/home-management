@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth";
 import { lineConfigured, linePushText } from "@/lib/line";
-import { buildDigest, type DigestTask } from "@/lib/digest";
+import { appBaseUrl, buildDigest, loadDigestTasks } from "@/lib/digest";
 import type { ActionState } from "@/lib/types";
 
 const str = (fd: FormData, k: string) => {
@@ -56,18 +56,8 @@ export async function deleteCategory(id: string): Promise<ActionState> {
 export async function sendLineTest(): Promise<ActionState> {
   const { supabase, householdId } = await requireSession();
   if (!lineConfigured()) return { error: "LINE is not configured. Set LINE_CHANNEL_ACCESS_TOKEN and LINE_GROUP_ID." };
-  const { data: rows } = await supabase
-    .from("task_due")
-    .select("title, due_on, days_until_due, categories(name, icon)")
-    .eq("household_id", householdId)
-    .not("due_on", "is", null)
-    .lte("days_until_due", 3)
-    .order("due_on");
-  const tasks: DigestTask[] = (rows ?? []).map((r) => {
-    const cat = r.categories as unknown as { name: string; icon: string | null } | null;
-    return { title: r.title, due_on: r.due_on!, days_until_due: r.days_until_due!, category: cat?.name ?? null, icon: cat?.icon ?? null };
-  });
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const tasks = await loadDigestTasks(supabase, householdId).catch(() => []);
+  const appUrl = appBaseUrl();
   const text = buildDigest(tasks, appUrl) ?? `🏠 Home tasks\n\nTest message — nothing overdue or due in the next 3 days.\n${appUrl}`;
   try {
     await linePushText(text);

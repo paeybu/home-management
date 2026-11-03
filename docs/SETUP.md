@@ -116,13 +116,16 @@ The group ID is only exposed through a webhook event, so use a temporary receive
     "source": { "type": "group", "groupId": "C1234abcd..." }
     ```
     The value starting with `C` is `LINE_GROUP_ID`.
-11. Turn **Use webhook** off and clear the URL. The app only pushes messages and never needs a webhook.
+11. Point the webhook at the app (enables the `/task` command, see below):
+    set **Webhook URL** to `https://<your-app>/api/line/webhook`, keep **Use webhook** on.
+12. **Basic settings** tab → copy **Channel secret**. This is `LINE_CHANNEL_SECRET`.
 
 ### Store the values
 
 ```bash
 vercel env add LINE_CHANNEL_ACCESS_TOKEN production
 vercel env add LINE_GROUP_ID production
+vercel env add LINE_CHANNEL_SECRET production
 vercel env pull
 ```
 Each command prompts for the value. Repeat with `preview` if previews should send too.
@@ -138,6 +141,12 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://home-management-two-theta.
 ```
 
 `?force=1` bypasses the once-per-day guard in `reminder_log`.
+
+### `/task` command
+
+Type `/task` (or `/tasks`) in the family group and the bot replies with the current digest
+(overdue + due in the next 3 days). It only answers in `LINE_GROUP_ID`. Click *Verify* on the
+Webhook URL in the LINE console after deploying; it should succeed.
 
 Free Official Account plan limit: 200 push messages per month. One digest per day, only on days something is due, stays well under that.
 

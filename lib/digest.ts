@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatDate } from "@/lib/format";
 
 export type DigestTask = {
@@ -26,4 +27,25 @@ export function buildDigest(tasks: DigestTask[], appUrl: string, soonDays = 3) {
   if (soon.length) parts.push("", `📅 Due in ${soonDays} days (${soon.length})`, ...soon.map(line));
   parts.push("", appUrl);
   return parts.join("\n");
+}
+
+/** Overdue + due-within-`soonDays` tasks for one household, shaped for `buildDigest`. */
+export async function loadDigestTasks(client: SupabaseClient, householdId: string, soonDays = 3): Promise<DigestTask[]> {
+  const { data, error } = await client
+    .from("task_due")
+    .select("title, due_on, days_until_due, categories(name, icon), contacts(name)")
+    .eq("household_id", householdId)
+    .not("due_on", "is", null)
+    .lte("days_until_due", soonDays)
+    .order("due_on");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => {
+    const cat = r.categories as unknown as { name: string; icon: string | null } | null;
+    const contact = r.contacts as unknown as { name: string } | null;
+    return { title: r.title, due_on: r.due_on!, days_until_due: r.days_until_due!, category: cat?.name ?? null, icon: cat?.icon ?? null, assignee: contact?.name ?? null };
+  });
+}
+
+export function appBaseUrl() {
+  return process.env.NEXT_PUBLIC_APP_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
 }
