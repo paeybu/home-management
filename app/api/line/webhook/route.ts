@@ -14,7 +14,7 @@ type LineEvent = {
 };
 
 /**
- * LINE Messaging API webhook. Replies with the task digest when someone types `/task`
+ * LINE Messaging API webhook. Replies with every active task when someone types `/task`
  * in the configured family group. Every other event is ignored.
  */
 export async function POST(request: Request) {
@@ -40,8 +40,8 @@ export async function POST(request: Request) {
       const appUrl = appBaseUrl();
       const texts: string[] = [];
       for (const h of households ?? []) {
-        const tasks = await loadDigestTasks(admin, h.id);
-        texts.push(buildDigest(tasks, appUrl) ?? `🏠 Home tasks\n\n✅ Nothing overdue or due in the next 3 days.\n${appUrl}`);
+        const tasks = await loadDigestTasks(admin, h.id, null);
+        texts.push(buildDigest(tasks, appUrl) ?? `🏠 Home tasks\n\n✅ No active tasks.\n${appUrl}`);
       }
       await lineReplyText(ev.replyToken, texts.length ? texts : ["🏠 No household set up yet."]);
     } catch (e) {
