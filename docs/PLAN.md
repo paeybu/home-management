@@ -46,7 +46,7 @@ contacts           id, household_id, name, company, role, category_id, phone, em
 Status: overdue if due < today, due_soon if due <= today + 7, upcoming otherwise. Paused/archived excluded.
 
 ## Reminder flow
-Vercel Cron 08:00 local -> /api/cron/line-digest (protected by CRON_SECRET)
+Vercel Cron 09:00 local -> /api/cron/line-digest (protected by CRON_SECRET)
 -> query task_due for overdue + due within 3 days
 -> LINE push to LINE_GROUP_ID via Messaging API
 -> log to reminder_log to avoid duplicate sends

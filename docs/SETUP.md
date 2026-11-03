@@ -86,7 +86,7 @@ To list who is allowed: `select email from public.allowed_emails;`
 ## 3. LINE reminders
 
 A daily digest of overdue and due-in-3-days tasks is pushed to a LINE group by Vercel Cron
-(`/api/cron/line-digest`, 01:00 UTC = 08:00 Asia/Bangkok).
+(`/api/cron/line-digest`, 02:00 UTC = 09:00 Asia/Bangkok).
 
 LINE changed the flow in 2024: you create a LINE Official Account first, then enable the Messaging API on it.
 
