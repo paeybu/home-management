@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { appBaseUrl, buildDigest, loadDigestTasks } from "@/lib/digest";
+import { appBaseUrl, buildDigest, loadDigestTasks, loadFridgeItems } from "@/lib/digest";
+import { fridgeInventoryText } from "@/lib/fridge";
+import { todayISO } from "@/lib/format";
 import { lineReplyText, verifyLineSignature } from "@/lib/line";
 
 /** Matches `/task` or `/tasks` on its own (case-insensitive), e.g. "/task", "/Tasks ". */
 const TASK_COMMAND = /^\/tasks?$/i;
+/** Matches `/fridge` on its own (case-insensitive). */
+const FRIDGE_COMMAND = /^\/fridge$/i;
 
 type LineEvent = {
   type: string;
@@ -14,8 +18,9 @@ type LineEvent = {
 };
 
 /**
- * LINE Messaging API webhook. Replies with every active task when someone types `/task`
- * in the configured family group. Every other event is ignored.
+ * LINE Messaging API webhook, for the configured family group only:
+ * `/task` replies with every active task, `/fridge` with the fridge/freezer inventory.
+ * Every other event is ignored.
  */
 export async function POST(request: Request) {
   const rawBody = await request.text();
@@ -28,7 +33,9 @@ export async function POST(request: Request) {
 
   for (const ev of events) {
     if (ev.type !== "message" || ev.message?.type !== "text" || !ev.replyToken) continue;
-    if (!TASK_COMMAND.test(ev.message.text?.trim() ?? "")) continue;
+    const text = ev.message.text?.trim() ?? "";
+    const command = TASK_COMMAND.test(text) ? "task" : FRIDGE_COMMAND.test(text) ? "fridge" : null;
+    if (!command) continue;
     // Only answer in the family group, so the bot can't leak tasks to other chats it's added to.
     if (!groupId || ev.source?.groupId !== groupId) continue;
 
@@ -40,12 +47,16 @@ export async function POST(request: Request) {
       const appUrl = appBaseUrl();
       const texts: string[] = [];
       for (const h of households ?? []) {
-        const tasks = await loadDigestTasks(admin, h.id, null);
-        texts.push(buildDigest(tasks, appUrl) ?? `🏠 Home tasks\n\n✅ No active tasks.\n${appUrl}`);
+        if (command === "fridge") {
+          texts.push(fridgeInventoryText(await loadFridgeItems(admin, h.id), todayISO(), appUrl));
+        } else {
+          const tasks = await loadDigestTasks(admin, h.id, null);
+          texts.push(buildDigest(tasks, appUrl) ?? `🏠 Home tasks\n\n✅ No active tasks.\n${appUrl}`);
+        }
       }
       await lineReplyText(ev.replyToken, texts.length ? texts : ["🏠 No household set up yet."]);
     } catch (e) {
-      console.error("[line-webhook] /task failed:", e);
+      console.error(`[line-webhook] /${command} failed:`, e);
     }
   }
 

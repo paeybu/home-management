@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatDate } from "@/lib/format";
+import type { FridgeItem } from "@/lib/types";
 
 export type DigestTask = {
   title: string;
@@ -12,14 +13,16 @@ export type DigestTask = {
 };
 
 /**
- * Plain-text digest: overdue, due within `soonDays`, then any later tasks under "Upcoming".
+ * Plain-text digest: overdue, due within `soonDays`, then any later tasks under "Upcoming",
+ * followed by `extraSections` (e.g. expiring fridge items; each is a list of lines, empty = skipped).
  * Returns null when there is nothing to say.
  */
-export function buildDigest(tasks: DigestTask[], appUrl: string, soonDays = 3) {
+export function buildDigest(tasks: DigestTask[], appUrl: string, soonDays = 3, extraSections: string[][] = []) {
   const overdue = tasks.filter((t) => t.days_until_due < 0).sort((a, b) => a.days_until_due - b.days_until_due);
   const soon = tasks.filter((t) => t.days_until_due >= 0 && t.days_until_due <= soonDays).sort((a, b) => a.days_until_due - b.days_until_due);
   const upcoming = tasks.filter((t) => t.days_until_due > soonDays).sort((a, b) => a.days_until_due - b.days_until_due);
-  if (overdue.length === 0 && soon.length === 0 && upcoming.length === 0) return null;
+  const extras = extraSections.filter((sec) => sec.length > 0);
+  if (overdue.length === 0 && soon.length === 0 && upcoming.length === 0 && extras.length === 0) return null;
 
   const line = (t: DigestTask) => {
     const when = t.days_until_due === 0 ? "today" : t.days_until_due === 1 ? "tomorrow" : t.days_until_due < 0 ? `${-t.days_until_due}d overdue` : `in ${t.days_until_due}d`;
@@ -30,6 +33,7 @@ export function buildDigest(tasks: DigestTask[], appUrl: string, soonDays = 3) {
   if (overdue.length) parts.push("", `⚠️ Overdue (${overdue.length})`, ...overdue.map(line));
   if (soon.length) parts.push("", `📅 Due in ${soonDays} days (${soon.length})`, ...soon.map(line));
   if (upcoming.length) parts.push("", `🗓️ Upcoming (${upcoming.length})`, ...upcoming.map(line));
+  for (const sec of extras) parts.push("", ...sec);
   parts.push("", appUrl);
   return parts.join("\n");
 }
@@ -52,6 +56,17 @@ export async function loadDigestTasks(client: SupabaseClient, householdId: strin
     const contact = r.contacts as unknown as { name: string } | null;
     return { title: r.title, due_on: r.due_on!, days_until_due: r.days_until_due!, category: cat?.name ?? null, icon: cat?.icon ?? null, assignee: contact?.name ?? null };
   });
+}
+
+/** Active fridge/freezer items for one household (all of them; filtering by expiry happens in lib/fridge). */
+export async function loadFridgeItems(client: SupabaseClient, householdId: string) {
+  const { data, error } = await client
+    .from("fridge_items")
+    .select("name, location, quantity, unit, expires_on")
+    .eq("household_id", householdId)
+    .is("removed_at", null);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Pick<FridgeItem, "name" | "location" | "quantity" | "unit" | "expires_on">[];
 }
 
 export function appBaseUrl() {

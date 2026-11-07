@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/page-header";
 import { TaskRow } from "@/components/task-row";
 import { requireSession } from "@/lib/auth";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
-import type { TaskDue } from "@/lib/types";
+import { expiryStatus, formatQuantity, locationIcon, relativeExpiry, sortByExpiry } from "@/lib/fridge";
+import type { FridgeItem, TaskDue } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 type Row = TaskDue & { categories: { name: string; icon: string | null } | null };
 
@@ -27,7 +29,7 @@ export default async function DashboardPage() {
   in30.setDate(in30.getDate() + 30);
   const monthEnd = in30.toISOString().slice(0, 10);
 
-  const [{ data: household }, { data: due }, { data: recent }] = await Promise.all([
+  const [{ data: household }, { data: due }, { data: recent }, { data: fridgeRows }] = await Promise.all([
     supabase.from("households").select("name").eq("id", householdId).single(),
     supabase
       .from("task_due")
@@ -43,7 +45,18 @@ export default async function DashboardPage() {
       .eq("household_id", householdId)
       .order("completed_at", { ascending: false })
       .limit(8),
+    supabase
+      .from("fridge_items")
+      .select("id, name, location, quantity, unit, expires_on")
+      .eq("household_id", householdId)
+      .is("removed_at", null)
+      .not("expires_on", "is", null)
+      .returns<Pick<FridgeItem, "id" | "name" | "location" | "quantity" | "unit" | "expires_on">[]>(),
   ]);
+  const expiring = sortByExpiry(fridgeRows ?? []).filter((i) => {
+    const { status } = expiryStatus(i.expires_on, today);
+    return status === "expired" || status === "expiring_soon";
+  });
 
   const rows = due ?? [];
   const overdue = rows.filter((t) => t.status === "overdue");
@@ -71,6 +84,31 @@ export default async function DashboardPage() {
       <Section title="This month" count={thisMonth.length} empty="Nothing else due in the next 30 days.">
         {thisMonth.map((t) => <TaskRow key={t.id} task={t} />)}
       </Section>
+
+      {expiring.length > 0 && (
+        <section aria-labelledby="sec-fridge">
+          <h2 id="sec-fridge" className="mb-1 flex items-baseline gap-2 text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+            <Link href="/fridge">Fridge: expiring soon</Link> <span className="text-xs font-normal">{expiring.length}</span>
+          </h2>
+          <ul className="divide-y">
+            {expiring.map((i) => {
+              const { status, days } = expiryStatus(i.expires_on, today);
+              return (
+                <li key={i.id}>
+                  <Link href={`/fridge?location=${i.location}`} className="flex items-center gap-3 py-2.5 text-sm">
+                    <span aria-hidden className="w-5 text-center">{locationIcon(i.location)}</span>
+                    <span className="min-w-0 flex-1 truncate">{i.name}</span>
+                    <span className="text-muted-foreground tabular-nums">{formatQuantity(i.quantity, i.unit)}</span>
+                    <span className={cn("font-medium", status === "expired" ? "text-red-700 dark:text-red-300" : "text-amber-700 dark:text-amber-300")}>
+                      {relativeExpiry(days)}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="sec-recent">
         <h2 id="sec-recent" className="mb-1 text-sm font-semibold tracking-wide text-muted-foreground uppercase">Recently done</h2>

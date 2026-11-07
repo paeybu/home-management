@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { appBaseUrl, buildDigest, loadDigestTasks, type DigestTask } from "@/lib/digest";
+import { appBaseUrl, buildDigest, loadDigestTasks, loadFridgeItems, type DigestTask } from "@/lib/digest";
+import { fridgeDigestSection } from "@/lib/fridge";
 import { lineConfigured, linePushText } from "@/lib/line";
 import { todayISO } from "@/lib/format";
 
@@ -33,13 +34,16 @@ export async function GET(request: Request) {
     }
 
     let tasks: DigestTask[];
+    let fridge: string[];
     try {
-      tasks = await loadDigestTasks(admin, h.id);
+      const [t, items] = await Promise.all([loadDigestTasks(admin, h.id), loadFridgeItems(admin, h.id)]);
+      tasks = t;
+      fridge = fridgeDigestSection(items, today);
     } catch (e) {
       results[h.id] = `query_error: ${e instanceof Error ? e.message : String(e)}`;
       continue;
     }
-    const text = buildDigest(tasks, appUrl);
+    const text = buildDigest(tasks, appUrl, 3, [fridge]);
     if (!text) { results[h.id] = "nothing_due"; continue; }
 
     try {

@@ -38,6 +38,11 @@ tasks              id, household_id, title, category_id, asset_id?, notes,
 task_completions   id, task_id, household_id, completed_at, completed_by, contact_id?, cost?, notes?, photo_path?
 contacts           id, household_id, name, company, role, category_id, phone, email, line_id, notes, archived_at
                    -- added 2026-11-02; tasks.contact_id = assignee, task_completions.contact_id = who did it
+fridge_items       id, household_id, name, location (fridge|freezer), quantity, unit (pcs|pack|g|kg|ml|l),
+                   added_on, expires_on?, opened_on?, notes, removed_at?, removed_reason? (used|discarded)
+                   -- added 2026-11-07; add 'pantry' later by replacing fridge_items_location_check
+                   -- + an entry in FRIDGE_LOCATIONS (lib/fridge.ts). Expiry status computed in app (Bangkok date):
+                   -- expired < today, expiring_soon <= today + 2, else fresh.
 
 ## Next due (SQL view `task_due`)
 - once:    start_date if no completion, else null (done)
@@ -47,7 +52,7 @@ Status: overdue if due < today, due_soon if due <= today + 7, upcoming otherwise
 
 ## Reminder flow
 Vercel Cron 09:00 local -> /api/cron/line-digest (protected by CRON_SECRET)
--> query task_due for overdue + due within 3 days
+-> query task_due for overdue + due within 3 days, plus fridge items expired / expiring within 2 days
 -> LINE push to LINE_GROUP_ID via Messaging API
 -> log to reminder_log to avoid duplicate sends
 Env: LINE_CHANNEL_ACCESS_TOKEN, LINE_GROUP_ID, CRON_SECRET
@@ -60,7 +65,10 @@ Env: LINE_CHANNEL_ACCESS_TOKEN, LINE_GROUP_ID, CRON_SECRET
 /assets/[id]      detail, linked tasks
 /contacts         list with search (name/role/phone digits), call/LINE/email buttons
 /contacts/[id]    detail, assigned tasks, job history, total paid
-/payments         cost by category, by year
+/fridge           fridge/freezer tabs, grouped Expired / Expiring soon / Fresh; −1, used up, thrown out
+/fridge/new       add item (quick expiry buttons); /fridge/[id]/edit
+/payments         cost by category, by year (linked from Settings; not in bottom nav)
+LINE commands     /task (all active tasks), /fridge (inventory)
 /settings         categories, LINE test send
 
 ## Deferred

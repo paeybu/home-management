@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronRight, Receipt } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
@@ -36,6 +38,13 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Link href="/payments" className="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium hover:bg-muted">
+        <Receipt className="size-4 text-muted-foreground" aria-hidden />
+        <span className="flex-1">Payments</span>
+        <span className="text-xs font-normal text-muted-foreground">Costs by category and year</span>
+        <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+      </Link>
+
       <Card>
         <CardHeader>
           <CardTitle>Categories</CardTitle>
@@ -50,7 +59,7 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle>LINE reminders</CardTitle>
           <CardDescription>
-            A digest of overdue and due-in-3-days tasks is pushed to your LINE group every morning.
+            A digest of overdue and due-in-3-days tasks, plus fridge items about to expire, is pushed to your LINE group every morning. Type <code>/task</code> or <code>/fridge</code> in the group to get the full list.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm">

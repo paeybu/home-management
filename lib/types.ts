@@ -84,4 +84,24 @@ export type TaskCompletion = {
   created_at: string;
 };
 
+export type FridgeLocation = "fridge" | "freezer";
+export type FridgeUnit = "pcs" | "pack" | "g" | "kg" | "ml" | "l";
+
+export type FridgeItem = {
+  id: string;
+  household_id: string;
+  name: string;
+  location: FridgeLocation;
+  quantity: number;
+  unit: FridgeUnit;
+  added_on: string;
+  expires_on: string | null;
+  opened_on: string | null;
+  notes: string | null;
+  removed_at: string | null;
+  removed_reason: "used" | "discarded" | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ActionState = { error?: string; success?: string } | undefined;

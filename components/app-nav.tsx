@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Contact, Home, ListChecks, Package, Receipt, Settings } from "lucide-react";
+import { Contact, Home, ListChecks, Package, Refrigerator, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -10,7 +10,7 @@ const items = [
   { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/assets", label: "Assets", icon: Package },
   { href: "/contacts", label: "Contacts", icon: Contact },
-  { href: "/payments", label: "Payments", icon: Receipt },
+  { href: "/fridge", label: "Fridge", icon: Refrigerator },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
