@@ -12,13 +12,38 @@ import type { FridgeItem } from "@/lib/types";
 
 export const MENU_MODEL = "claude-sonnet-5-5";
 /** Bump when the prompt or schema changes so cached suggestions are regenerated. */
-const PROMPT_VERSION = "1";
+const PROMPT_VERSION = "2";
 
 /** Assumed to be in the kitchen already, so never listed as missing. */
 const PANTRY_STAPLES = ["ข้าวสวย", "น้ำปลา", "ซีอิ๊ว", "ซอสหอยนางรม", "น้ำตาล", "เกลือ", "พริกไทย", "น้ำมันพืช", "กระเทียม", "หอมแดง", "พริก"];
 
+export const CUISINES = [
+  { value: "thai", label: "Thai", th: "ไทย" },
+  { value: "japanese", label: "Japanese", th: "ญี่ปุ่น" },
+  { value: "chinese", label: "Chinese", th: "จีน" },
+  { value: "korean", label: "Korean", th: "เกาหลี" },
+  { value: "vietnamese", label: "Vietnamese", th: "เวียดนาม" },
+  { value: "indian", label: "Indian", th: "อินเดีย" },
+  { value: "italian", label: "Italian", th: "อิตาเลียน" },
+  { value: "western", label: "Western", th: "ตะวันตก" },
+] as const;
+export type Cuisine = (typeof CUISINES)[number]["value"];
+const CUISINE_VALUES = CUISINES.map((c) => c.value) as [Cuisine, ...Cuisine[]];
+
+export type MenuFilters = { mainIds: string[]; cuisines: Cuisine[] };
+
+/** Parse `?main=<id>&cuisine=<value>` (each repeatable) into filters; unknown values are dropped. */
+export function parseMenuFilters(main: unknown, cuisine: unknown): MenuFilters {
+  const list = (v: unknown) => (Array.isArray(v) ? v : v == null ? [] : [v]).filter((x): x is string => typeof x === "string" && x !== "");
+  return {
+    mainIds: [...new Set(list(main))],
+    cuisines: [...new Set(list(cuisine))].filter((c): c is Cuisine => (CUISINE_VALUES as string[]).includes(c)),
+  };
+}
+
 const DishSchema = z.object({
   name: z.string().describe("Dish name in Thai"),
+  cuisine: z.enum(CUISINE_VALUES),
   description: z.string().describe("One short sentence in Thai"),
   time_minutes: z.number().int().describe("Total cooking time in minutes"),
   servings: z.number().int(),
@@ -37,11 +62,11 @@ export type MenuIngredient = { name: string; emoji: string; amount: string; expi
 export type MenuDish = Omit<RawDish, "uses"> & { uses: MenuIngredient[] };
 export type MenuSuggestions = { dishes: MenuDish[]; createdAt: string; model: string };
 
-type InventoryItem = Pick<FridgeItem, "id" | "name" | "location" | "quantity" | "unit" | "expires_on" | "opened_on"> & {
+export type InventoryItem = Pick<FridgeItem, "id" | "name" | "location" | "quantity" | "unit" | "expires_on" | "opened_on"> & {
   food_catalog: { emoji: string | null } | null;
 };
 
-async function loadInventory(client: SupabaseClient, householdId: string) {
+export async function loadInventory(client: SupabaseClient, householdId: string) {
   const { data, error } = await client
     .from("fridge_items")
     .select("id, name, location, quantity, unit, expires_on, opened_on, food_catalog(emoji)")
@@ -52,15 +77,17 @@ async function loadInventory(client: SupabaseClient, householdId: string) {
   return sortByExpiry(data ?? []);
 }
 
-function inventoryHash(items: InventoryItem[]) {
+function inventoryHash(items: InventoryItem[], filters: MenuFilters) {
   const key = items
     .map((i) => [i.name.trim().toLowerCase(), i.location, Number(i.quantity), i.unit, i.expires_on ?? "", i.opened_on ?? ""].join("|"))
     .sort()
     .join("\n");
-  return createHash("sha256").update(`${PROMPT_VERSION}\n${key}`).digest("hex");
+  const main = items.filter((i) => filters.mainIds.includes(i.id)).map((i) => i.id).sort().join(",");
+  const cuisines = [...filters.cuisines].sort().join(",");
+  return createHash("sha256").update(`${PROMPT_VERSION}\nmain:${main}\ncuisine:${cuisines}\n${key}`).digest("hex");
 }
 
-function inventoryPrompt(items: InventoryItem[], today: string) {
+function inventoryPrompt(items: InventoryItem[], today: string, filters: MenuFilters) {
   const lines = items.map((i, n) => {
     const { status, days } = expiryStatus(i.expires_on, today);
     const expiry =
@@ -68,7 +95,13 @@ function inventoryPrompt(items: InventoryItem[], today: string) {
     const flags = [i.location, expiry, i.opened_on ? "opened" : null].filter(Boolean).join(", ");
     return `${n + 1}. ${i.name} — ${formatQuantity(i.quantity, i.unit)} (${flags})`;
   });
-  return `Today is ${today}. Our fridge and freezer contain:\n\n${lines.join("\n")}`;
+  const parts = [`Today is ${today}. Our fridge and freezer contain:\n\n${lines.join("\n")}`];
+  const main = items.flatMap((i, n) => (filters.mainIds.includes(i.id) ? [`${n + 1}. ${i.name}`] : []));
+  if (main.length) parts.push(`Main ingredients we want to cook with:\n${main.join("\n")}`);
+  if (filters.cuisines.length) {
+    parts.push(`Cuisines we want: ${filters.cuisines.map((c) => CUISINES.find((x) => x.value === c)!.label).join(", ")}`);
+  }
+  return parts.join("\n\n");
 }
 
 const SYSTEM_PROMPT = `You suggest home-cooked dishes for a Thai household based on what is in their fridge and freezer.
@@ -80,12 +113,37 @@ Suggest 5 dishes, best first. Rank by:
 
 Rules:
 - Write every dish name, description, amount, missing ingredient and step in Thai.
-- Mostly Thai home cooking; other cuisines are fine when they fit the ingredients better.
+- If main ingredients are given, every dish must be built around at least one of them, and together the dishes should cover all of them. Combine several in one dish when they go well together. Other items are supporting ingredients.
+- If cuisines are given, every dish must be one of those cuisines; spread the dishes across them. Otherwise mostly Thai home cooking, with other cuisines when they fit the ingredients better.
+- Set "cuisine" to the dish's cuisine.
 - Only reference inventory items by their number. Don't use more than the quantity available.
 - Skip items marked EXPIRED unless they are frozen or clearly still safe (e.g. hard cheese); never build a dish around expired fresh meat, seafood or dairy.
 - Frozen items need thawing; mention it in the first step.
 - Assume these pantry staples are available and never list them as missing: ${PANTRY_STAPLES.join(", ")}.
 - Keep steps short and concrete (5–8 steps).`;
+
+/** `?main=…&cuisine=…` query string (with leading `?`, or "" when no filters). */
+export function menuFiltersQuery(filters: MenuFilters) {
+  const q = new URLSearchParams();
+  filters.mainIds.forEach((id) => q.append("main", id));
+  filters.cuisines.forEach((c) => q.append("cuisine", c));
+  const str = q.toString();
+  return str ? `?${str}` : "";
+}
+
+/** Saved suggestions for the current inventory + filters, without calling the model. Null when none are saved. */
+export async function getCachedMenu(client: SupabaseClient, householdId: string, filters: MenuFilters, items: InventoryItem[]) {
+  const { data: cached, error } = await client
+    .from("menu_suggestions")
+    .select("dishes, model, created_at")
+    .eq("household_id", householdId)
+    .eq("inventory_hash", inventoryHash(items, filters))
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Couldn't load menu suggestions: ${error.message}`);
+  return cached ? ({ dishes: cached.dishes as MenuDish[], model: cached.model, createdAt: cached.created_at } satisfies MenuSuggestions) : null;
+}
 
 /**
  * Menu suggestions for the household's current inventory. Returns the cached result when the
@@ -95,26 +153,18 @@ export async function getMenuSuggestions(
   client: SupabaseClient,
   householdId: string,
   today: string,
-  { force = false }: { force?: boolean } = {},
+  { force = false, filters = { mainIds: [], cuisines: [] }, items }: { force?: boolean; filters?: MenuFilters; items?: InventoryItem[] } = {},
 ): Promise<MenuSuggestions | null> {
-  const items = await loadInventory(client, householdId);
+  items ??= await loadInventory(client, householdId);
   if (!items.length) return null;
-  const hash = inventoryHash(items);
+  const hash = inventoryHash(items, filters);
 
   if (!force) {
-    const { data: cached, error } = await client
-      .from("menu_suggestions")
-      .select("dishes, model, created_at")
-      .eq("household_id", householdId)
-      .eq("inventory_hash", hash)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw new Error(`Couldn't load menu suggestions: ${error.message}`);
-    if (cached) return { dishes: cached.dishes as MenuDish[], model: cached.model, createdAt: cached.created_at };
+    const cached = await getCachedMenu(client, householdId, filters, items);
+    if (cached) return cached;
   }
 
-  const raw = await generateDishes(items, today);
+  const raw = await generateDishes(items, today, filters);
   const dishes = raw.map((d) => resolveDish(d, items, today));
 
   const { data: saved, error } = await client
@@ -126,7 +176,7 @@ export async function getMenuSuggestions(
   return { dishes, model: MENU_MODEL, createdAt: saved?.created_at ?? new Date().toISOString() };
 }
 
-async function generateDishes(items: InventoryItem[], today: string): Promise<RawDish[]> {
+async function generateDishes(items: InventoryItem[], today: string, filters: MenuFilters): Promise<RawDish[]> {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
   const anthropic = new Anthropic();
   const response = await anthropic.beta.messages.parse({
@@ -137,7 +187,7 @@ async function generateDishes(items: InventoryItem[], today: string): Promise<Ra
     fallbacks: "default",
     output_config: { effort: "low", format: zodOutputFormat(MenuSchema) },
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: inventoryPrompt(items, today) }],
+    messages: [{ role: "user", content: inventoryPrompt(items, today, filters) }],
   });
 
   if (response.stop_reason === "refusal") throw new Error("The model declined to suggest dishes. Try again.");
