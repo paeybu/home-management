@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Box, List, Plus } from "lucide-react";
+import { Box, ChefHat, List, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { FridgeItemRow } from "@/components/fridge-item-row";
@@ -78,6 +78,7 @@ export default async function FridgePage({ searchParams }: PageProps<"/fridge">)
               </Link>
             ))}
           </div>
+          <Button render={<Link href="/fridge/cook" />} size="sm" variant="outline"><ChefHat aria-hidden /> Cook</Button>
           <Button render={<Link href={`/fridge/new?location=${location}`} />} size="sm"><Plus aria-hidden /> Add</Button>
         </div>
       }
