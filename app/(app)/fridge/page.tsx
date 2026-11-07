@@ -1,8 +1,11 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Box, List, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { FridgeItemRow } from "@/components/fridge-item-row";
+import { Fridge3DView, type Fridge3DItem } from "@/components/fridge-3d/fridge-3d-view";
+import { foodEmoji } from "@/lib/food-emoji";
+import { resolveModel } from "@/lib/food-models";
 import { requireSession } from "@/lib/auth";
 import { FRIDGE_LOCATIONS, expiryStatus, sortByExpiry } from "@/lib/fridge";
 import { todayISO } from "@/lib/format";
@@ -35,14 +38,17 @@ export default async function FridgePage({ searchParams }: PageProps<"/fridge">)
   const sp = await searchParams;
   const location: FridgeLocation = FRIDGE_LOCATIONS.some((l) => l.value === sp.location) ? (sp.location as FridgeLocation) : "fridge";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
+  const view = sp.view === "list" ? "list" : "3d";
 
   const { supabase, householdId } = await requireSession();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("fridge_items")
-    .select("*")
+    .select("*, food_catalog(emoji, model)")
     .eq("household_id", householdId)
     .is("removed_at", null)
-    .returns<FridgeItem[]>();
+    .returns<(FridgeItem & { food_catalog: { emoji: string | null; model: string | null } | null })[]>();
+  // Fail loudly: an empty list here would look like the fridge was emptied.
+  if (error) throw new Error(`Couldn't load fridge items: ${error.message}`);
   const today = todayISO();
   const all = data ?? [];
 
@@ -52,18 +58,61 @@ export default async function FridgePage({ searchParams }: PageProps<"/fridge">)
   );
   const byStatus = (s: string[]) => items.filter((i) => s.includes(expiryStatus(i.expires_on, today).status));
 
+  const header = (
+    <PageHeader
+      title="Fridge"
+      action={
+        <div className="flex gap-2">
+          <div className="flex rounded-lg bg-muted p-0.5" role="group" aria-label="View">
+            {([["3d", "3D", Box], ["list", "List", List]] as const).map(([v, label, Icon]) => (
+              <Link
+                key={v}
+                href={v === "list" ? `/fridge?view=list&location=${location}` : "/fridge"}
+                aria-current={view === v ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground",
+                  view === v && "bg-background text-foreground shadow-sm",
+                )}
+              >
+                <Icon className="size-3.5" aria-hidden /> {label}
+              </Link>
+            ))}
+          </div>
+          <Button render={<Link href={`/fridge/new?location=${location}`} />} size="sm"><Plus aria-hidden /> Add</Button>
+        </div>
+      }
+    />
+  );
+
+  if (view === "3d") {
+    const items3d: Fridge3DItem[] = all.map((i) => ({
+      id: i.id,
+      name: i.name,
+      location: i.location,
+      unit: i.unit,
+      quantity: Number(i.quantity),
+      expires_on: i.expires_on,
+      opened_on: i.opened_on,
+      emoji: i.food_catalog?.emoji ?? foodEmoji(i.name, i.unit, i.location),
+      model: resolveModel(i.food_catalog?.model, i.name),
+    }));
+    return (
+      <div className="flex flex-col gap-4">
+        {header}
+        <Fridge3DView items={items3d} today={today} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Fridge"
-        action={<Button render={<Link href={`/fridge/new?location=${location}`} />} size="sm"><Plus aria-hidden /> Add</Button>}
-      />
+      {header}
 
       <nav aria-label="Location" className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
         {FRIDGE_LOCATIONS.map((l) => (
           <Link
             key={l.value}
-            href={`/fridge?location=${l.value}`}
+            href={`/fridge?view=list&location=${l.value}`}
             aria-current={l.value === location ? "page" : undefined}
             className={cn(
               "flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground",
@@ -77,6 +126,7 @@ export default async function FridgePage({ searchParams }: PageProps<"/fridge">)
       </nav>
 
       <form className="flex gap-2" action="/fridge">
+        <input type="hidden" name="view" value="list" />
         <input type="hidden" name="location" value={location} />
         <input
           type="search"

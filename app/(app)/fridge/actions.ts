@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/auth";
-import { FRIDGE_LOCATIONS, FRIDGE_UNITS } from "@/lib/fridge";
+import { requireSession, type Session } from "@/lib/auth";
+import { FRIDGE_LOCATIONS, FRIDGE_UNITS, daysBetween } from "@/lib/fridge";
+import { FOOD_MODELS } from "@/lib/food-models";
 import { todayISO } from "@/lib/format";
 import type { ActionState, FridgeLocation, FridgeUnit } from "@/lib/types";
 
@@ -35,26 +36,112 @@ function parseItem(fd: FormData) {
   } as const;
 }
 
+type ParsedItem = Extract<ReturnType<typeof parseItem>, { data: unknown }>["data"];
+
+/**
+ * Emoji / 3D model chosen in the form, as stored in food_catalog: null = guess from the name,
+ * model "none" = emoji only. `undefined` = field not submitted (leave the catalog value alone).
+ */
+function parseLook(fd: FormData) {
+  const rawEmoji = fd.get("emoji");
+  const emoji = typeof rawEmoji !== "string" ? undefined : rawEmoji.trim() ? [...rawEmoji.trim()].slice(0, 4).join("") : null;
+  const raw = fd.get("model");
+  const model = typeof raw !== "string" ? undefined : raw === "" ? "none" : FOOD_MODELS.includes(raw) ? raw : null;
+  return { emoji, model };
+}
+
+/** `ilike` with %, _ and \ escaped, i.e. a case-insensitive exact match. */
+const ilikeExact = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/**
+ * Find-or-create the household's catalog entry for this food and refresh its defaults
+ * (unit, location, shelf life, look). `count` bumps use_count (new items only, not edits).
+ */
+async function upsertCatalog(
+  session: Session,
+  item: ParsedItem,
+  look: ReturnType<typeof parseLook>,
+  count: boolean,
+): Promise<string | null> {
+  const { supabase, householdId } = session;
+  const shelfLife = item.expires_on ? Math.max(0, daysBetween(item.added_on, item.expires_on)) : undefined;
+  const { data: existing } = await supabase
+    .from("food_catalog")
+    .select("id, use_count, emoji, model")
+    .eq("household_id", householdId)
+    .ilike("name", ilikeExact(item.name))
+    .maybeSingle();
+
+  const defaults = {
+    default_unit: item.unit,
+    default_location: item.location,
+    ...(shelfLife !== undefined && { shelf_life_days: shelfLife }),
+  };
+
+  if (existing) {
+    const { error } = await supabase
+      .from("food_catalog")
+      .update({
+        ...defaults,
+        ...(look.emoji !== undefined && { emoji: look.emoji }),
+        ...(look.model !== undefined && { model: look.model }),
+        ...(count && { use_count: existing.use_count + 1, last_used_at: new Date().toISOString() }),
+      })
+      .eq("id", existing.id);
+    if (error) console.error("[fridge] catalog update failed:", error.message);
+    return existing.id;
+  }
+
+  const { data, error } = await supabase
+    .from("food_catalog")
+    .insert({
+      household_id: householdId,
+      name: item.name,
+      emoji: look.emoji ?? null,
+      model: look.model ?? null,
+      ...defaults,
+      use_count: count ? 1 : 0,
+      last_used_at: count ? new Date().toISOString() : null,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    // The catalog is a convenience: never block saving the item because of it.
+    console.error("[fridge] catalog insert failed:", error.message);
+    return null;
+  }
+  return data.id;
+}
+
 function revalidate() {
   revalidatePath("/fridge");
   revalidatePath("/");
 }
 
-export async function createFridgeItem(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const { supabase, householdId } = await requireSession();
+export type FridgeFormState = (ActionState & { location?: FridgeLocation; savedAt?: number }) | undefined;
+
+/** Submit with `intent=another` to stay on the form (it resets, keeping the chosen location). */
+export async function createFridgeItem(_prev: FridgeFormState, fd: FormData): Promise<FridgeFormState> {
+  const session = await requireSession();
+  const { supabase, householdId } = session;
   const parsed = parseItem(fd);
   if ("error" in parsed) return { error: parsed.error };
-  const { error } = await supabase.from("fridge_items").insert({ ...parsed.data, household_id: householdId });
+  const catalog_id = await upsertCatalog(session, parsed.data, parseLook(fd), true);
+  const { error } = await supabase.from("fridge_items").insert({ ...parsed.data, catalog_id, household_id: householdId });
   if (error) return { error: error.message };
   revalidate();
+  if (fd.get("intent") === "another") {
+    return { success: `${parsed.data.name} added`, location: parsed.data.location, savedAt: Date.now() };
+  }
   redirect(`/fridge?location=${parsed.data.location}`);
 }
 
 export async function updateFridgeItem(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const { supabase } = await requireSession();
+  const session = await requireSession();
   const parsed = parseItem(fd);
   if ("error" in parsed) return { error: parsed.error };
-  const { error } = await supabase.from("fridge_items").update(parsed.data).eq("id", id);
+  const catalog_id = await upsertCatalog(session, parsed.data, parseLook(fd), false);
+  const { error } = await session.supabase.from("fridge_items").update({ ...parsed.data, catalog_id }).eq("id", id);
   if (error) return { error: error.message };
   revalidate();
   redirect(`/fridge?location=${parsed.data.location}`);

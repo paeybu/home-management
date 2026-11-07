@@ -100,8 +100,22 @@ export type FridgeItem = {
   notes: string | null;
   removed_at: string | null;
   removed_reason: "used" | "discarded" | null;
+  catalog_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type FoodCatalogEntry = {
+  id: string;
+  household_id: string;
+  name: string;
+  emoji: string | null;
+  model: string | null;
+  default_unit: FridgeUnit | null;
+  default_location: FridgeLocation | null;
+  shelf_life_days: number | null;
+  use_count: number;
+  last_used_at: string | null;
 };
 
 export type ActionState = { error?: string; success?: string } | undefined;
